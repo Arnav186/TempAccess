@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { argon2id, argon2Verify, bcrypt, bcryptVerify } from 'hash-wasm';
+import { argon2id, argon2Verify } from 'hash-wasm';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -38,7 +38,6 @@ const random = size => crypto.randomBytes(size);
 const randomId = () => random(8).toString('hex');
 const hashToken = token => crypto.createHash('sha256').update(token).digest('hex');
 const isLocal = req => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip);
-const safePrefix = value => String(value || 'learner').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 24) || 'learner';
 const password = length => {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*_-';
   return Array.from(random(length), byte => alphabet[byte % alphabet.length]).join('');
@@ -57,21 +56,15 @@ function requireAdmin(req, res, next) {
 app.post('/api/credentials', requireAdmin, async (req, res, next) => {
   try {
     const durationMinutes = Number(req.body.durationMinutes);
-    const passwordLength = Number(req.body.passwordLength);
-    const algorithm = req.body.algorithm === 'bcrypt' ? 'bcrypt' : 'argon2id';
     if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 10_080) return res.status(400).json({ error: 'Duration must be 1–10,080 minutes.' });
-    if (!Number.isInteger(passwordLength) || passwordLength < 16 || passwordLength > 64) return res.status(400).json({ error: 'Password length must be 16–64.' });
-
-    const plainPassword = password(passwordLength);
-    const hash = algorithm === 'argon2id'
-      ? await argon2id({ password: plainPassword, salt: random(16), parallelism: 1, iterations: 3, memorySize: 19_456, hashLength: 32, outputType: 'encoded' })
-      : await bcrypt({ password: plainPassword, salt: random(16), costFactor: Number(process.env.BCRYPT_ROUNDS || 12), outputType: 'encoded' });
+    const plainPassword = password(22);
+    const hash = await argon2id({ password: plainPassword, salt: random(16), parallelism: 1, iterations: 3, memorySize: 19_456, hashLength: 32, outputType: 'encoded' });
     const createdAt = Date.now();
     const expiresAt = createdAt + durationMinutes * 60_000;
-    const username = `${safePrefix(req.body.prefix)}-${randomId()}@temporary.local`;
+    const username = `learner-${randomId()}@temporary.local`;
     const id = crypto.randomUUID();
-    db.prepare('INSERT INTO credentials (id, username, password_hash, algorithm, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, username, hash, algorithm, createdAt, expiresAt);
-    res.status(201).json({ id, username, password: plainPassword, expiresAt, algorithm });
+    db.prepare('INSERT INTO credentials (id, username, password_hash, algorithm, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, username, hash, 'argon2id', createdAt, expiresAt);
+    res.status(201).json({ id, username, password: plainPassword, expiresAt, algorithm: 'argon2id' });
   } catch (error) { next(error); }
 });
 
@@ -82,7 +75,7 @@ app.post('/api/login', loginLimiter, async (req, res, next) => {
     const credential = db.prepare('SELECT * FROM credentials WHERE username = ?').get(username);
     const now = Date.now();
     if (!credential || credential.revoked_at || credential.expires_at <= now) return res.status(401).json({ error: 'Invalid, expired, or revoked credentials.' });
-    const matches = credential.algorithm === 'argon2id' ? await argon2Verify({ password: plainPassword, hash: credential.password_hash }) : await bcryptVerify({ password: plainPassword, hash: credential.password_hash });
+    const matches = await argon2Verify({ password: plainPassword, hash: credential.password_hash });
     if (!matches) return res.status(401).json({ error: 'Invalid, expired, or revoked credentials.' });
     const token = random(32).toString('base64url');
     db.prepare('INSERT INTO sessions (token_hash, credential_id, expires_at) VALUES (?, ?, ?)').run(hashToken(token), credential.id, credential.expires_at);

@@ -1,6 +1,6 @@
 # Temporary Access App
 
-A compact Node.js + SQLite application for issuing password-only temporary accounts. It stores an Argon2id or bcrypt hash, never the plaintext password. Temporary users can sign in until their server-enforced expiry; administrators can revoke an account through the API. It uses Node's built-in SQLite module and WebAssembly hashing, avoiding native dependency compilation.
+A compact Node.js + SQLite application for issuing password-only temporary accounts. An administrator selects only the access duration; the service generates the username and password, and stores only an Argon2id hash. Temporary users can sign in until their server-enforced expiry; administrators can revoke an account through the API. It uses Node's built-in SQLite module and WebAssembly hashing, avoiding native dependency compilation.
 
 ## Run locally
 
