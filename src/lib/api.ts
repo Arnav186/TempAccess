@@ -1,0 +1,4 @@
+export type Me = { role: 'ADMIN'; csrfToken: string } | { role: 'TEMPORARY_USER'; csrfToken: string; username: string; expiresAt: string; promptLimit: number; promptCount: number; tokenBudget: number; tokenUsed: number };
+let csrfToken = '';
+export const setCsrf = (value?: string | null) => { csrfToken = value || ''; };
+export async function api<T>(url: string, init: RequestInit = {}): Promise<T> { const response = await fetch(url, { credentials: 'include', headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...(csrfToken && init.method && init.method !== 'GET' ? { 'x-csrf-token': csrfToken } : {}), ...init.headers }, ...init }); const payload = response.status === 204 ? undefined : await response.json(); if (!response.ok) throw new Error(payload?.error || 'Request failed.'); return payload as T; }

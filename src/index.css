@@ -1,0 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+@tailwind base; @tailwind components; @tailwind utilities;
+@layer base { :root { font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; color: #f4f4f5; background:#09090b; } body { min-width:320px; min-height:100vh; background-image: radial-gradient(circle at 50% -20%, #2e1065 0%, #09090b 70%); background-attachment: fixed; } button,input,select,textarea { font:inherit; } }
+@layer components { 
+  .panel { @apply rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl shadow-black/60; } 
+  .field { @apply w-full rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-zinc-100 outline-none transition-all focus:border-violet-400 focus:bg-white/5 focus:ring-4 focus:ring-violet-500/20 shadow-inner; }
+  .field option { background-color: #18181b; color: #f4f4f5; } 
+  .btn { @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100; } 
+  .btn-primary { @apply btn bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:from-violet-500 hover:to-fuchsia-500 shadow-lg shadow-violet-900/40 hover:-translate-y-0.5; } 
+  .btn-secondary { @apply btn bg-white/5 border border-white/10 text-zinc-100 hover:bg-white/10 hover:-translate-y-0.5 shadow-sm; } 
+  .label { @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-violet-300/80; } 
+}

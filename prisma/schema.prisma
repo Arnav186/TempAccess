@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Provider {
+  OPENAI
+  GEMINI
+  ANTHROPIC
+}
+enum AccountStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+enum SessionRole {
+  ADMIN
+  TEMPORARY_USER
+}
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  CREATE_USER
+  REVOKE_USER
+  DELETE_USER
+  UPDATE_LIMITS
+  CHAT
+  DENIED_CHAT
+}
+
+model Administrator {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+  createdUsers TemporaryUser[]
+  auditEvents  AuditEvent[] @relation("AdminAudit")
+}
+
+model TemporaryUser {
+  id                 String        @id @default(uuid()) @db.Uuid
+  username           String        @unique
+  passwordHash       String
+  status             AccountStatus @default(ACTIVE)
+  expiresAt          DateTime
+  revokedAt          DateTime?
+  promptLimit        Int           @default(50)
+  promptCount        Int           @default(0)
+  tokenBudget        Int           @default(100000)
+  tokenUsed          Int           @default(0)
+  createdAt          DateTime      @default(now())
+  createdById        String        @db.Uuid
+  createdBy          Administrator @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  sessions           Session[]
+  conversations      Conversation[]
+  usageLogs          UsageLog[]
+  auditEvents        AuditEvent[] @relation("UserAudit")
+  @@index([status, expiresAt])
+  @@index([createdById])
+}
+
+model Session {
+  id              String       @id @default(uuid()) @db.Uuid
+  tokenHash       String       @unique
+  role            SessionRole
+  administratorId String?      @db.Uuid
+  temporaryUserId String?      @db.Uuid
+  csrfToken       String
+  expiresAt       DateTime
+  createdAt       DateTime     @default(now())
+  lastSeenAt      DateTime     @default(now())
+  administrator   Administrator? @relation(fields: [administratorId], references: [id], onDelete: Cascade)
+  temporaryUser   TemporaryUser? @relation(fields: [temporaryUserId], references: [id], onDelete: Cascade)
+  @@index([temporaryUserId, expiresAt])
+  @@index([administratorId, expiresAt])
+}
+
+model Conversation {
+  id              String        @id @default(uuid()) @db.Uuid
+  temporaryUserId String        @db.Uuid
+  title           String        @default("New conversation")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  temporaryUser   TemporaryUser @relation(fields: [temporaryUserId], references: [id], onDelete: Cascade)
+  messages        Message[]
+  @@index([temporaryUserId, updatedAt])
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @db.Uuid
+  role           MessageRole
+  content        String       @db.Text
+  provider       Provider?
+  model          String?
+  inputTokens    Int          @default(0)
+  outputTokens   Int          @default(0)
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@index([conversationId, createdAt])
+}
+
+model UsageLog {
+  id              String        @id @default(uuid()) @db.Uuid
+  temporaryUserId String        @db.Uuid
+  provider        Provider
+  model           String
+  inputTokens     Int           @default(0)
+  outputTokens    Int           @default(0)
+  createdAt       DateTime      @default(now())
+  temporaryUser   TemporaryUser @relation(fields: [temporaryUserId], references: [id], onDelete: Cascade)
+  @@index([temporaryUserId, createdAt])
+}
+
+model AuditEvent {
+  id              String         @id @default(uuid()) @db.Uuid
+  action          AuditAction
+  ip              String?
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+  administratorId String?        @db.Uuid
+  temporaryUserId String?        @db.Uuid
+  administrator   Administrator? @relation("AdminAudit", fields: [administratorId], references: [id], onDelete: SetNull)
+  temporaryUser   TemporaryUser? @relation("UserAudit", fields: [temporaryUserId], references: [id], onDelete: SetNull)
+  @@index([temporaryUserId, createdAt])
+  @@index([administratorId, createdAt])
+}
