@@ -9,9 +9,11 @@ const durationMinutes = z.union([z.literal(30), z.literal(60), z.literal(120), z
 const createUserSchema = z.object({ durationMinutes, promptLimit: z.number().int().min(1).max(10_000).default(50), tokenBudget: z.number().int().min(1_000).max(10_000_000).default(100_000) });
 const loginSchema = z.object({ username: z.string().min(1).max(128), password: z.string().min(1).max(512) });
 const messageSchema = z.object({ role: z.enum(['user', 'assistant']), content: z.string().min(1).max(30_000) });
-const chatSchema = z.object({ conversationId: z.string().uuid().optional(), model: z.string().min(3).max(200), messages: z.array(messageSchema).min(1).max(80) });
+const attachmentSchema = z.object({ name: z.string().min(1).max(180), content: z.string().min(1).max(15_000) });
+const chatSchema = z.object({ conversationId: z.string().uuid().optional(), model: z.string().min(3).max(200), messages: z.array(messageSchema).min(1).max(80), attachment: attachmentSchema.optional(), stream: z.boolean().optional() });
 const limitsSchema = z.object({ promptLimit: z.number().int().min(1).max(10_000).optional(), tokenBudget: z.number().int().min(1_000).max(10_000_000).optional() }).refine(v => v.promptLimit !== undefined || v.tokenBudget !== undefined);
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*_-';
+const MAX_OUTPUT_TOKENS = 4096;
 const password = () => Array.from({ length: 22 }, () => alphabet[crypto.randomInt(alphabet.length)]).join('');
 const username = () => `learner-${crypto.randomUUID().slice(0, 10)}@temporary.local`;
 const estimateTokens = (messages: { content: string }[]) => Math.ceil(messages.reduce((sum, message) => sum + message.content.length, 0) / 3.5);
@@ -33,7 +35,16 @@ export function createApp() {
       if (admin && await verifyPassword(admin.passwordHash, suppliedPassword)) { const csrfToken = await createSession(res, { role: 'ADMIN', id: admin.id }); await audit(AuditAction.LOGIN, { adminId: admin.id, ip }); return res.json({ role: 'ADMIN', csrfToken }); }
       const user = await prisma.temporaryUser.findUnique({ where: { username: loginName } });
       if (!user || user.status !== AccountStatus.ACTIVE || user.expiresAt <= new Date() || !(await verifyPassword(user.passwordHash, suppliedPassword))) { await audit(AuditAction.DENIED_CHAT, { ip, metadata: { reason: 'invalid_login' } }); return res.status(401).json({ error: 'Invalid or expired credentials.' }); }
-      const csrfToken = await createSession(res, { role: 'TEMPORARY_USER', id: user.id, expiresAt: user.expiresAt }); await audit(AuditAction.LOGIN, { userId: user.id, ip }); res.json({ role: 'TEMPORARY_USER', csrfToken, expiresAt: user.expiresAt });
+      const csrfToken = await createSession(res, { role: 'TEMPORARY_USER', id: user.id, expiresAt: user.expiresAt }); await audit(AuditAction.LOGIN, { userId: user.id, ip }); res.json({
+        role: 'TEMPORARY_USER',
+        csrfToken,
+        username: user.username,
+        expiresAt: user.expiresAt,
+        promptLimit: user.promptLimit,
+        promptCount: user.promptCount,
+        tokenBudget: user.tokenBudget,
+        tokenUsed: user.tokenUsed,
+      });
     } catch (error) { next(error); }
   });
   app.post('/api/auth/logout', async (req, res) => { const principal = await requirePrincipal(req, res); if (!principal || !requireCsrf(req, res, principal)) return; await prisma.session.deleteMany({ where: { csrfToken: principal.csrfToken } }); await audit(AuditAction.LOGOUT, { adminId: principal.role === 'ADMIN' ? principal.administratorId : undefined, userId: principal.role === 'TEMPORARY_USER' ? principal.temporaryUserId : undefined, ip: clientIp(req) }); clearSession(res); res.status(204).end(); });
@@ -54,13 +65,86 @@ export function createApp() {
 
   app.post('/api/chat', apiLimit, async (req, res, next) => {
     try {
-      const principal = await requirePrincipal(req, res); if (!principal || principal.role !== 'TEMPORARY_USER' || !requireCsrf(req, res, principal)) return; const input = chatSchema.parse(req.body); const spec = allowedModels.find(model => model.id === input.model); if (!spec) return res.status(400).json({ error: 'This model is not enabled.' }); const estimatedInput = estimateTokens(input.messages), reserve = estimatedInput + 1024, now = new Date();
+      const principal = await requirePrincipal(req, res);
+      if (!principal || principal.role !== 'TEMPORARY_USER' || !requireCsrf(req, res, principal)) return;
+      const input = chatSchema.parse(req.body);
+      const spec = allowedModels.find(model => model.id === input.model);
+      if (!spec) return res.status(400).json({ error: 'This model is not enabled.' });
+      const providerMessages = input.attachment
+        ? input.messages.map((message, index) => index === input.messages.length - 1
+          ? { ...message, content: `${message.content}\n\nAttached document: ${input.attachment!.name}\n---\n${input.attachment!.content}\n---` }
+          : message)
+        : input.messages;
+      const estimatedInput = estimateTokens(providerMessages), reserve = estimatedInput + MAX_OUTPUT_TOKENS, now = new Date();
       const reserved = await prisma.$executeRaw`UPDATE "TemporaryUser" SET "promptCount" = "promptCount" + 1, "tokenUsed" = "tokenUsed" + ${reserve} WHERE "id" = ${principal.temporaryUserId}::uuid AND "status" = 'ACTIVE'::"AccountStatus" AND "expiresAt" > ${now} AND "promptCount" < "promptLimit" AND "tokenUsed" + ${reserve} <= "tokenBudget"`;
-      if (!reserved) { await audit(AuditAction.DENIED_CHAT, { userId: principal.temporaryUserId, ip: clientIp(req), metadata: { reason: 'expired_or_budget_limit' } }); return res.status(403).json({ error: 'Access expired, revoked, prompt limit, or token budget reached.' }); }
+      if (!reserved) {
+        await audit(AuditAction.DENIED_CHAT, { userId: principal.temporaryUserId, ip: clientIp(req), metadata: { reason: 'expired_or_budget_limit' } });
+        return res.status(403).json({ error: 'Access expired, revoked, prompt limit, or token budget reached.' });
+      }
       const user = await prisma.temporaryUser.findUniqueOrThrow({ where: { id: principal.temporaryUserId } });
-      const conversation = input.conversationId ? await prisma.conversation.findFirst({ where: { id: input.conversationId, temporaryUserId: user.id } }) : await prisma.conversation.create({ data: { temporaryUserId: user.id, title: input.messages.find(message => message.role === 'user')?.content.slice(0, 60) || 'New conversation' } }); if (!conversation) return res.status(404).json({ error: 'Conversation not found.' });
-      const output = await providerFor(spec).complete({ model: spec.model, messages: input.messages, maxOutputTokens: 1024, system: 'You are a helpful assistant in a temporary, access-controlled AI workspace.' }); const actual = output.inputTokens + output.outputTokens;
-      await prisma.$transaction([prisma.message.create({ data: { conversationId: conversation.id, role: MessageRole.USER, content: input.messages.at(-1)?.content || '' } }), prisma.message.create({ data: { conversationId: conversation.id, role: MessageRole.ASSISTANT, content: output.content, provider: asProvider(spec.provider), model: spec.model, inputTokens: output.inputTokens, outputTokens: output.outputTokens } }), prisma.usageLog.create({ data: { temporaryUserId: user.id, provider: asProvider(spec.provider), model: spec.model, inputTokens: output.inputTokens, outputTokens: output.outputTokens } }), prisma.temporaryUser.update({ where: { id: user.id }, data: { tokenUsed: { decrement: Math.max(0, reserve - actual) } } }), prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } })]); await audit(AuditAction.CHAT, { userId: user.id, ip: clientIp(req), metadata: { model: spec.id } }); res.json({ conversationId: conversation.id, message: output.content, usage: { inputTokens: output.inputTokens, outputTokens: output.outputTokens } });
+      const conversation = input.conversationId
+        ? await prisma.conversation.findFirst({ where: { id: input.conversationId, temporaryUserId: user.id } })
+        : await prisma.conversation.create({ data: { temporaryUserId: user.id, title: input.messages.find(message => message.role === 'user')?.content.slice(0, 60) || 'New conversation' } });
+      if (!conversation) {
+        await prisma.temporaryUser.update({ where: { id: user.id }, data: { promptCount: { decrement: 1 }, tokenUsed: { decrement: reserve } } });
+        return res.status(404).json({ error: 'Conversation not found.' });
+      }
+
+      const wantsStream = input.stream === true || req.headers.accept === 'text/event-stream';
+      const provider = providerFor(spec);
+
+      if (wantsStream) {
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders?.();
+
+        res.write(`event: start\ndata: ${JSON.stringify({ conversationId: conversation.id })}\n\n`);
+
+        try {
+          const chatInput = { model: spec.model, messages: providerMessages, maxOutputTokens: MAX_OUTPUT_TOKENS, system: 'Give complete, well-structured answers. For code, always include the full compilable solution and do not stop partway through a block.' };
+          let output: { content: string; inputTokens: number; outputTokens: number };
+          if (typeof provider.stream === 'function') {
+            output = await provider.stream(chatInput, (chunk) => {
+              res.write(`event: chunk\ndata: ${JSON.stringify({ chunk })}\n\n`);
+            });
+          } else {
+            output = await provider.complete(chatInput);
+            res.write(`event: chunk\ndata: ${JSON.stringify({ chunk: output.content })}\n\n`);
+          }
+
+          const actual = output.inputTokens + output.outputTokens;
+          await prisma.$transaction([
+            prisma.message.create({ data: { conversationId: conversation.id, role: MessageRole.USER, content: input.messages.at(-1)?.content || '' } }),
+            prisma.message.create({ data: { conversationId: conversation.id, role: MessageRole.ASSISTANT, content: output.content, provider: asProvider(spec.provider), model: spec.model, inputTokens: output.inputTokens, outputTokens: output.outputTokens } }),
+            prisma.usageLog.create({ data: { temporaryUserId: user.id, provider: asProvider(spec.provider), model: spec.model, inputTokens: output.inputTokens, outputTokens: output.outputTokens } }),
+            prisma.temporaryUser.update({ where: { id: user.id }, data: { tokenUsed: { decrement: Math.max(0, reserve - actual) } } }),
+            prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } })
+          ]);
+          await audit(AuditAction.CHAT, { userId: user.id, ip: clientIp(req), metadata: { model: spec.id } });
+
+          res.write(`event: done\ndata: ${JSON.stringify({ conversationId: conversation.id, message: output.content, usage: { inputTokens: output.inputTokens, outputTokens: output.outputTokens } })}\n\n`);
+          res.end();
+        } catch (streamError) {
+          await prisma.temporaryUser.update({ where: { id: user.id }, data: { promptCount: { decrement: 1 }, tokenUsed: { decrement: reserve } } });
+          const errorMessage = streamError instanceof Error ? streamError.message : 'Stream generation failed.';
+          res.write(`event: error\ndata: ${JSON.stringify({ error: errorMessage })}\n\n`);
+          res.end();
+        }
+      } else {
+        const output = await provider.complete({ model: spec.model, messages: providerMessages, maxOutputTokens: MAX_OUTPUT_TOKENS, system: 'Give complete, well-structured answers. For code, always include the full compilable solution and do not stop partway through a block.' });
+        const actual = output.inputTokens + output.outputTokens;
+        await prisma.$transaction([
+          prisma.message.create({ data: { conversationId: conversation.id, role: MessageRole.USER, content: input.messages.at(-1)?.content || '' } }),
+          prisma.message.create({ data: { conversationId: conversation.id, role: MessageRole.ASSISTANT, content: output.content, provider: asProvider(spec.provider), model: spec.model, inputTokens: output.inputTokens, outputTokens: output.outputTokens } }),
+          prisma.usageLog.create({ data: { temporaryUserId: user.id, provider: asProvider(spec.provider), model: spec.model, inputTokens: output.inputTokens, outputTokens: output.outputTokens } }),
+          prisma.temporaryUser.update({ where: { id: user.id }, data: { tokenUsed: { decrement: Math.max(0, reserve - actual) } } }),
+          prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } })
+        ]);
+        await audit(AuditAction.CHAT, { userId: user.id, ip: clientIp(req), metadata: { model: spec.id } });
+        res.json({ conversationId: conversation.id, message: output.content, usage: { inputTokens: output.inputTokens, outputTokens: output.outputTokens } });
+      }
     } catch (error) { next(error); }
   });
    app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => { if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid request.', details: error.issues }); console.error(error); res.status(500).json({ error: 'Request failed.' }); }); return app;

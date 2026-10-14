@@ -1,12 +1,383 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
-@tailwind base; @tailwind components; @tailwind utilities;
-@layer base { :root { font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; color: #f4f4f5; background:#09090b; } body { min-width:320px; min-height:100vh; background-image: radial-gradient(circle at 50% -20%, #2e1065 0%, #09090b 70%); background-attachment: fixed; } button,input,select,textarea { font:inherit; } }
-@layer components { 
-  .panel { @apply rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl shadow-black/60; } 
-  .field { @apply w-full rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-zinc-100 outline-none transition-all focus:border-violet-400 focus:bg-white/5 focus:ring-4 focus:ring-violet-500/20 shadow-inner; }
-  .field option { background-color: #18181b; color: #f4f4f5; } 
-  .btn { @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100; } 
-  .btn-primary { @apply btn bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:from-violet-500 hover:to-fuchsia-500 shadow-lg shadow-violet-900/40 hover:-translate-y-0.5; } 
-  .btn-secondary { @apply btn bg-white/5 border border-white/10 text-zinc-100 hover:bg-white/10 hover:-translate-y-0.5 shadow-sm; } 
-  .label { @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-violet-300/80; } 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* System fonts are available immediately, so text does not resize after a web-font download. */
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 17px;
+    color: #172033;
+    background: #f0f7fa;
+    color-scheme: light;
+  }
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 100% 0%, rgba(207, 226, 236, 0.72) 0%, transparent 31rem),
+      radial-gradient(circle at 0% 90%, rgba(220, 236, 245, 0.78) 0%, transparent 35rem),
+      #f0f7fa;
+    background-attachment: fixed;
+    overflow-x: hidden;
+  }
+  button, input, select, textarea {
+    font: inherit;
+  }
+  code, pre {
+    font-family: Consolas, "Courier New", monospace;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  vertical-align: -1px;
+  margin-left: 2px;
+  background: #a78bfa;
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.8);
+  animation: cursorBlink 0.9s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(147, 51, 234, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(147, 51, 234, 0.45);
+  }
+}
+
+.pulse-glow {
+  animation: pulseGlow 2.5s infinite;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-slate-200 bg-white/90 backdrop-blur-xl shadow-xl shadow-slate-200/60 transition-all duration-200;
+  }
+  .field {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition-all duration-200 focus:border-sky-600 focus:ring-4 focus:ring-sky-500/15 shadow-inner placeholder:text-slate-400 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .field option {
+    background-color: #ffffff;
+    color: #172033;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 select-none;
+  }
+  .btn-primary {
+    @apply btn bg-gradient-to-r from-sky-700 to-blue-700 text-white hover:from-sky-600 hover:to-blue-600 shadow-lg shadow-sky-900/25 hover:-translate-y-0.5 hover:shadow-sky-800/35;
+  }
+  .btn-secondary {
+    @apply btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 hover:-translate-y-0.5 shadow-sm hover:text-slate-950;
+  }
+  .btn-danger {
+    @apply btn bg-red-500/10 border border-red-500/20 text-red-300 hover:bg-red-500/20 hover:border-red-500/40 hover:text-red-200 hover:-translate-y-0.5;
+  }
+  .label {
+    @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-sky-800/80;
+  }
+}
+
+/* Light workspace treatment for existing utility-based components. */
+.bg-zinc-950\/95, .bg-zinc-950\/80, .bg-zinc-950\/90, .bg-black\/80, .bg-black\/40, .bg-black\/30, .bg-black\/10 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+.border-white\/10, .border-white\/15, .border-white\/5 {
+  border-color: #e2e8f0 !important;
+}
+.text-zinc-100, .text-zinc-200 {
+  color: #172033 !important;
+}
+.text-zinc-300, .text-zinc-400, .text-zinc-500 {
+  color: #64748b !important;
+}
+.hover\:text-zinc-200:hover {
+  color: #172033 !important;
+}
+.bg-white\/5, .bg-white\/10, .bg-white\/\[0\.03\], .bg-white\/\[0\.08\] {
+  background-color: #f8fafc !important;
+}
+.prose-invert {
+  --tw-prose-body: #334155;
+  --tw-prose-headings: #172033;
+  --tw-prose-links: #6d28d9;
+  --tw-prose-bold: #172033;
+  --tw-prose-code: #6d28d9;
+}
+
+.workspace-metrics {
+  position: relative;
+  z-index: 1;
+}
+.metric-card {
+  min-height: 112px;
+  padding: 1rem 1.1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 8px 24px rgba(148, 163, 184, 0.14);
+}
+.metric-label {
+  display: block;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.metric-value {
+  display: block;
+  margin-top: 0.35rem;
+  color: #172033;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+.metric-detail {
+  display: block;
+  margin-top: 0.25rem;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+.metric-percent {
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.metric-track {
+  height: 0.38rem;
+  margin-top: 0.85rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+.metric-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4f93b6, #3f6f8c);
+  transition: width 240ms ease;
+}
+
+.chat-composer-shell {
+  background: linear-gradient(180deg, transparent 0%, rgba(224, 239, 246, 0.88) 40%, #f0f7fa 100%);
+}
+.chat-composer {
+  border: 2px solid #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 14px 32px rgba(71, 85, 105, 0.18);
+}
+.chat-composer:focus-within {
+  border-color: #3f6f8c;
+  box-shadow: 0 0 0 4px rgba(63, 111, 140, 0.16), 0 14px 32px rgba(71, 85, 105, 0.18);
+}
+.chat-composer-text {
+  color: #0f172a;
+  font-weight: 500;
+  line-height: 1.55;
+}
+.chat-composer-text::placeholder {
+  color: #475569;
+  opacity: 1;
+}
+
+.user-message {
+  border: 1px solid #cfe2ec;
+  background: #dcecf5;
+  color: #1e4054;
+  box-shadow: 0 8px 20px rgba(63, 111, 140, 0.12);
+}
+.assistant-message {
+  border: 1px solid #cfe2ec;
+  background: #ffffff;
+  color: #172033;
+  box-shadow: 0 8px 24px rgba(71, 85, 105, 0.1);
+}
+.assistant-message .prose {
+  color: #334155;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+.assistant-message .prose h1,
+.assistant-message .prose h2,
+.assistant-message .prose h3 {
+  color: #1e4054;
+  letter-spacing: -0.02em;
+}
+.assistant-message .prose pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid #264b60;
+  border-radius: 0.85rem;
+  background: #163646;
+  color: #edf8fc;
+  padding: 1.15rem 1.25rem;
+  font-size: 0.94rem;
+  line-height: 1.65;
+  box-shadow: none;
+}
+.assistant-message .prose code {
+  color: #2b6d8f;
+}
+.assistant-message .prose pre code {
+  color: #edf8fc;
+}
+.assistant-message .prose hr {
+  border-color: #cfe2ec;
+}
+.model-error-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid #cfe2ec;
+  color: #5e7787;
+  font-size: 0.82rem;
+}
+.model-retry-button {
+  border: 1px solid #3f6f8c;
+  border-radius: 0.6rem;
+  background: #e0eff6;
+  color: #1e4054;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.42rem 0.7rem;
+}
+.model-retry-button:not(:disabled):hover { background: #cfe2ec; }
+.model-retry-button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* Larger, easier-to-scan text in the administrator screen and chat navigation. */
+.admin-dashboard .label {
+  font-size: 0.78rem;
+}
+.admin-dashboard .text-xs {
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.admin-dashboard .text-\[10px\] {
+  font-size: 0.75rem;
+}
+.admin-dashboard .text-\[11px\] {
+  font-size: 0.8rem;
+}
+.admin-dashboard table {
+  font-size: 0.95rem;
+}
+.admin-dashboard table th {
+  font-size: 0.78rem;
+}
+.workspace-sidebar .text-xs,
+.workspace-sidebar .text-\[11px\] {
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.workspace-sidebar .text-\[10px\] {
+  font-size: 0.78rem;
+}
+
+.sidebar-search {
+  width: 100%;
+  border: 1px solid #cfe2ec;
+  border-radius: 0.7rem;
+  background: #ffffff;
+  color: #1e4054;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  outline: none;
+}
+.sidebar-search::placeholder { color: #6b8798; }
+.sidebar-search:focus { border-color: #3f6f8c; box-shadow: 0 0 0 3px rgba(63, 111, 140, 0.14); }
+.sidebar-template-save, .sidebar-template {
+  border: 1px solid #cfe2ec;
+  border-radius: 0.55rem;
+  background: #ffffff;
+  color: #315d78;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.3rem 0.45rem;
+}
+.sidebar-template { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-template-save:disabled { cursor: not-allowed; opacity: 0.45; }
+.sidebar-template:not(:disabled):hover, .sidebar-template-save:not(:disabled):hover { background: #e0eff6; }
+
+.attachment-button, .attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  border: 1px solid #cfe2ec;
+  border-radius: 0.6rem;
+  background: #ffffff;
+  color: #315d78;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+}
+.attachment-button { cursor: pointer; }
+.attachment-button:hover { background: #e0eff6; }
+.attachment-chip { background: #dcecf5; color: #1e4054; }
+.attachment-chip button { display: inline-flex; padding: 0; color: inherit; }
+.attachment-error { color: #b42318; font-size: 0.78rem; font-weight: 600; }
+
+/* Sign-in screen: larger, more comfortable reading and typing sizes. */
+.login-card .text-xs {
+  font-size: 0.875rem;
+}
+.login-card h1 {
+  font-size: clamp(2.4rem, 5vw, 3rem);
+}
+.login-card > p {
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+.login-card .label {
+  font-size: 0.82rem;
+}
+.login-card .field {
+  padding-block: 0.8rem;
+  font-size: 1.05rem;
+}
+.login-card .btn-primary {
+  min-height: 3.7rem;
+  font-size: 1.1rem;
+}
+.login-card .login-label {
+  font-size: 16px;
+  letter-spacing: 0.1em;
+}
+.login-card .login-input {
+  min-height: 3.55rem;
+  padding-inline: 1.15rem;
+  font-size: 20px;
 }
